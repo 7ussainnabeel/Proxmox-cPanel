@@ -687,7 +687,7 @@ touch /root/.cpanel-installed
 echo \"[\$(date)] cPanel installation finished.\"
 " >/dev/null 2>&1
 
-virt-customize -q -a "$WORK_FILE" --chmod "0700" "/root/install-cpanel.sh" >/dev/null 2>&1
+virt-customize -q -a "$WORK_FILE" --chmod "0700:/root/install-cpanel.sh" >/dev/null 2>&1
 
 # Create systemd service inside image to trigger cPanel setup on boot
 virt-customize -q -a "$WORK_FILE" --write "/etc/systemd/system/install-cpanel.service:
