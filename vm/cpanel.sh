@@ -237,14 +237,18 @@ function validate_ip() {
 
 function prompt_cpanel_network() {
   # IP Type selection
-  if IP_TYPE=$(whiptail --backtitle "Proxmox cPanel Installer" --title "IP ADDRESS CONFIGURATION" --radiolist \
-    "Choose how the VM should obtain its IP address:" 10 58 2 \
-    "static" "Static IP Address (Recommended)" ON \
-    "dhcp" "DHCP (Automatic)" OFF \
-    3>&1 1>&2 2>&3); then
-    echo -e "${GATEWAY}${BOLD}${DGN}IP Type: ${BGN}$IP_TYPE${CL}"
+  if [ "$METHOD" == "advanced" ]; then
+    if IP_TYPE=$(whiptail --backtitle "Proxmox cPanel Installer" --title "IP ADDRESS CONFIGURATION" --radiolist \
+      "Choose how the VM should obtain its IP address:" 10 58 2 \
+      "static" "Static IP Address (Recommended)" ON \
+      "dhcp" "DHCP (Automatic)" OFF \
+      3>&1 1>&2 2>&3); then
+      echo -e "${GATEWAY}${BOLD}${DGN}IP Type: ${BGN}$IP_TYPE${CL}"
+    else
+      exit-script
+    fi
   else
-    exit-script
+    IP_TYPE="dhcp"
   fi
 
   if [ "$IP_TYPE" == "static" ]; then
