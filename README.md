@@ -59,10 +59,11 @@ During execution, the wizard will walk you through setting up:
 | **CPU Cores** | `4` | Cores assigned to VM. |
 | **RAM** | `8192` | Memory allocated to the VM (in MB). |
 | **Network Bridge** | `vmbr0` | Network bridge interface name. |
+| **IP Configuration** | `DHCP` | Choose DHCP (default for Default Settings) or Static IP. |
 | **FQDN Hostname** | *(Required)* | Fully qualified domain name (e.g., `cpanel.example.com`). |
-| **Static IPv4** | *(Required)* | Static IP to assign (CIDR format required: `x.x.x.x/xx`). |
-| **Gateway** | *(Required)* | Gateway address for internet access. |
-| **DNS Servers** | `1.1.1.1 8.8.8.8` | DNS resolvers. |
+| **Static IPv4** | *(Optional)* | Static IP address with CIDR prefix (required if Static IP selected). |
+| **Gateway** | *(Optional)* | Gateway address for internet access (required if Static IP selected). |
+| **DNS Servers** | `1.1.1.1 8.8.8.8` | DNS resolvers (configured automatically if DHCP is used). |
 | **Root Password** | *(Required)* | User password for root login (interactive prompt or random generator). |
 
 ---
@@ -81,7 +82,7 @@ During execution, the wizard will walk you through setting up:
    - Injects `/root/install-cpanel.sh` and `/etc/systemd/system/install-cpanel.service` into the disk image.
 5. **VM Provisioning:**
    - Creates the Proxmox VM, imports and resizes the customized disk.
-   - Attaches and configures the native Cloud-Init drive with static IP, Hostname, and password configs.
+   - Attaches and configures the native Cloud-Init drive with network settings (DHCP or Static IP), Hostname, and password configs.
 6. **First Boot Installation:**
    - When the VM starts, Cloud-Init applies network and login configurations.
    - The first-boot systemd service runs the cPanel installation in the background, updating repositories and pulling down the latest WHM binary files.
