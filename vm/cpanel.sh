@@ -667,11 +667,65 @@ virt-customize -q -a "$WORK_FILE" --write "/root/install-cpanel.sh:
 exec > /var/log/cpanel-install.log 2>&1
 echo \"[\$(date)] Starting cPanel installation...\"
 
+# Wait for cloud-init to finish boot phases
+if command -v cloud-init &>/dev/null; then
+  echo \"[\$(date)] Waiting for cloud-init to complete...\"
+  cloud-init status --wait
+fi
+
+# Wait for apt/dpkg locks to be released
+echo \"[\$(date)] Waiting for any active apt/dpkg locks to release...\"
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+  sleep 5
+done
+
 # Wait for internet connectivity
 for i in {1..30}; do
   ping -c 1 8.8.8.8 >/dev/null 2>&1 && break
   sleep 5
 done
+
+# If the IP is dynamic, convert it to static so cPanel installer doesn't abort
+if ip addr show | grep -q 'dynamic'; then
+  echo \"[\$(date)] DHCP detected. Converting to static IP configuration...\"
+  INTERFACE=\$(ip route show | grep default | awk '{print \$5}' | head -n1)
+  IP_ADDR=\$(ip -o -4 addr show dev \"\$INTERFACE\" | awk '{print \$4}' | head -n1)
+  GATEWAY=\$(ip route show | grep default | awk '{print \$3}' | head -n1)
+  
+  if [ -n \"\$INTERFACE\" ] && [ -n \"\$IP_ADDR\" ] && [ -n \"\$GATEWAY\" ]; then
+    echo \"[\$(date)] Converting \$INTERFACE (\$IP_ADDR) with gateway \$GATEWAY to static...\"
+    
+    # Backup existing netplan configs
+    mkdir -p /etc/netplan/backup
+    mv /etc/netplan/*.yaml /etc/netplan/backup/ 2>/dev/null || true
+    
+    cat <<EOF > /etc/netplan/99-dhcp-to-static.yaml
+network:
+  version: 2
+  ethernets:
+    \$INTERFACE:
+      dhcp4: no
+      addresses:
+        - \$IP_ADDR
+      routes:
+        - to: default
+          via: \$GATEWAY
+      nameservers:
+        addresses:
+          - 1.1.1.1
+          - 8.8.8.8
+EOF
+    chmod 600 /etc/netplan/99-dhcp-to-static.yaml
+    netplan apply
+    sleep 5
+    echo \"[\$(date)] Network successfully converted to static.\"
+  else
+    echo \"[\$(date)] WARNING: Failed to gather DHCP lease info. Proceeding without conversion.\"
+  fi
+fi
+
+# Set default target to multi-user.target as required by cPanel
+systemctl set-default multi-user.target
 
 # Disable firewall (UFW) as required by cPanel on Ubuntu
 iptables-save > /root/firewall.rules
