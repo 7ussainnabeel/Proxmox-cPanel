@@ -236,6 +236,58 @@ function validate_ip() {
 }
 
 function prompt_cpanel_network() {
+  # IP Type selection
+  if IP_TYPE=$(whiptail --backtitle "Proxmox cPanel Installer" --title "IP ADDRESS CONFIGURATION" --radiolist \
+    "Choose how the VM should obtain its IP address:" 10 58 2 \
+    "static" "Static IP Address (Recommended)" ON \
+    "dhcp" "DHCP (Automatic)" OFF \
+    3>&1 1>&2 2>&3); then
+    echo -e "${GATEWAY}${BOLD}${DGN}IP Type: ${BGN}$IP_TYPE${CL}"
+  else
+    exit-script
+  fi
+
+  if [ "$IP_TYPE" == "static" ]; then
+    # Static IP
+    while true; do
+      if IP_ADDRESS_CIDR=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set Static IPv4 Address with CIDR prefix (e.g., 192.168.1.100/24)" 9 58 "" --title "STATIC IP ADDRESS" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+        if validate_ip_cidr "$IP_ADDRESS_CIDR"; then
+          echo -e "${GATEWAY}${BOLD}${DGN}Static IP: ${BGN}$IP_ADDRESS_CIDR${CL}"
+          break
+        fi
+        whiptail --backtitle "Proxmox cPanel Installer" --title "INVALID IP" --msgbox "Invalid IP format. Please use CIDR format (e.g., 192.168.1.100/24)." 10 50
+      else
+        exit-script
+      fi
+    done
+
+    # Gateway IP
+    while true; do
+      if GATEWAY_IP=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set Gateway IP Address (e.g., 192.168.1.1)" 8 58 "" --title "GATEWAY IP" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+        if validate_ip "$GATEWAY_IP"; then
+          echo -e "${GATEWAY}${BOLD}${DGN}Gateway IP: ${BGN}$GATEWAY_IP${CL}"
+          break
+        fi
+        whiptail --backtitle "Proxmox cPanel Installer" --title "INVALID GATEWAY" --msgbox "Invalid Gateway format. Please use standard IP format (e.g., 192.168.1.1)." 10 50
+      else
+        exit-script
+      fi
+    done
+
+    # DNS Servers
+    if DNS_SERVERS=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set DNS Servers (space-separated)" 8 58 "1.1.1.1 8.8.8.8" --title "DNS SERVERS" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
+      [[ -z "$DNS_SERVERS" ]] && DNS_SERVERS="1.1.1.1 8.8.8.8"
+      echo -e "${DEFAULT}${BOLD}${DGN}DNS Servers: ${BGN}$DNS_SERVERS${CL}"
+    else
+      exit-script
+    fi
+  else
+    # DHCP Config
+    IP_ADDRESS_CIDR="dhcp"
+    GATEWAY_IP=""
+    DNS_SERVERS="1.1.1.1 8.8.8.8"
+  fi
+
   # FQDN Hostname
   while true; do
     if HOSTNAME_FQDN=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set FQDN Hostname for cPanel (e.g., cpanel.example.com)" 8 58 "${HN}.example.com" --title "FQDN HOSTNAME" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
@@ -249,40 +301,6 @@ function prompt_cpanel_network() {
       exit-script
     fi
   done
-
-  # Static IP
-  while true; do
-    if IP_ADDRESS_CIDR=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set Static IPv4 Address with CIDR prefix (e.g., 192.168.1.100/24)" 9 58 "" --title "STATIC IP ADDRESS" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
-      if validate_ip_cidr "$IP_ADDRESS_CIDR"; then
-        echo -e "${GATEWAY}${BOLD}${DGN}Static IP: ${BGN}$IP_ADDRESS_CIDR${CL}"
-        break
-      fi
-      whiptail --backtitle "Proxmox cPanel Installer" --title "INVALID IP" --msgbox "Invalid IP format. Please use CIDR format (e.g., 192.168.1.100/24)." 10 50
-    else
-      exit-script
-    fi
-  done
-
-  # Gateway IP
-  while true; do
-    if GATEWAY_IP=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set Gateway IP Address (e.g., 192.168.1.1)" 8 58 "" --title "GATEWAY IP" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
-      if validate_ip "$GATEWAY_IP"; then
-        echo -e "${GATEWAY}${BOLD}${DGN}Gateway IP: ${BGN}$GATEWAY_IP${CL}"
-        break
-      fi
-      whiptail --backtitle "Proxmox cPanel Installer" --title "INVALID GATEWAY" --msgbox "Invalid Gateway format. Please use standard IP format (e.g., 192.168.1.1)." 10 50
-    else
-      exit-script
-    fi
-  done
-
-  # DNS Servers
-  if DNS_SERVERS=$(whiptail --backtitle "Proxmox cPanel Installer" --inputbox "Set DNS Servers (space-separated)" 8 58 "1.1.1.1 8.8.8.8" --title "DNS SERVERS" --cancel-button Exit-Script 3>&1 1>&2 2>&3); then
-    [[ -z "$DNS_SERVERS" ]] && DNS_SERVERS="1.1.1.1 8.8.8.8"
-    echo -e "${DEFAULT}${BOLD}${DGN}DNS Servers: ${BGN}$DNS_SERVERS${CL}"
-  else
-    exit-script
-  fi
 
   # Password (Prompt root password)
   while true; do
@@ -726,12 +744,18 @@ msg_ok "Imported disk (${CL}${BL}${DISK_REF_IMPORTED}${CL})"
 rm -f "$WORK_FILE"
 
 msg_info "Configuring Native Cloud-Init & EFI disk"
+if [ "$IP_TYPE" == "static" ]; then
+  IP_CONFIG_STR="ip=${IP_ADDRESS_CIDR},gw=${GATEWAY_IP}"
+else
+  IP_CONFIG_STR="ip=dhcp"
+fi
+
 qm set $VMID \
   -efidisk0 ${STORAGE}:0,efitype=4m \
   -scsi0 ${DISK_REF_IMPORTED},${DISK_CACHE}${THIN%,} \
   -ide2 ${STORAGE}:cloudinit \
   -boot order=scsi0 \
-  -ipconfig0 "ip=${IP_ADDRESS_CIDR},gw=${GATEWAY_IP}" \
+  -ipconfig0 "${IP_CONFIG_STR}" \
   -nameserver "${DNS_SERVERS}" \
   -searchdomain "local" \
   -ciuser "root" \
@@ -791,11 +815,20 @@ post_update_to_api "done" "none"
 echo -e "\n${INFO}${BOLD}${GN}cPanel & WHM VM Configuration Summary:${CL}"
 echo -e "${TAB}${DGN}VM ID: ${BGN}${VMID}${CL}"
 echo -e "${TAB}${DGN}Hostname: ${BGN}${HOSTNAME_FQDN}${CL}"
-echo -e "${TAB}${DGN}Static IP: ${BGN}${IP_ADDRESS_CIDR%/*}${CL}"
+if [ "$IP_TYPE" == "static" ]; then
+  echo -e "${TAB}${DGN}Static IP: ${BGN}${IP_ADDRESS_CIDR%/*}${CL}"
+else
+  echo -e "${TAB}${DGN}IP Address: ${BGN}DHCP (Dynamic)${CL}"
+fi
 echo -e "${TAB}${DGN}Root User: ${BGN}root${CL}"
 echo -e "${TAB}${DGN}Root Password: ${BGN}${ROOT_PASSWORD}${CL}"
-echo -e "${TAB}${DGN}WHM Portal: ${BGN}https://${IP_ADDRESS_CIDR%/*}:2087${CL}"
-echo -e "${TAB}${DGN}cPanel Portal: ${BGN}https://${IP_ADDRESS_CIDR%/*}:2083${CL}"
+if [ "$IP_TYPE" == "static" ]; then
+  echo -e "${TAB}${DGN}WHM Portal: ${BGN}https://${IP_ADDRESS_CIDR%/*}:2087${CL}"
+  echo -e "${TAB}${DGN}cPanel Portal: ${BGN}https://${IP_ADDRESS_CIDR%/*}:2083${CL}"
+else
+  echo -e "${TAB}${DGN}WHM Portal: ${BGN}https://<VM_IP>:2087${CL}"
+  echo -e "${TAB}${DGN}cPanel Portal: ${BGN}https://<VM_IP>:2083${CL}"
+fi
 echo -e "\n${TAB}${YW}⚠️  cPanel installation runs in the background on first boot.${CL}"
 echo -e "${TAB}${YW}⚠️  It may take 15-40 minutes to complete.${CL}"
 echo -e "${TAB}${YW}⚠️  Track progress via Console: ${BL}tail -f /var/log/cpanel-install.log${CL}"
