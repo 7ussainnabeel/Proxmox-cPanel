@@ -1,6 +1,6 @@
 # Proxmox cPanel & WHM VM Installer
 
-An interactive, automated bash installer that deploys a fully configured AlmaLinux 9 Virtual Machine on Proxmox VE, automatically installing **cPanel & WHM**.
+An interactive, automated bash installer that deploys a fully configured Ubuntu 24.04 LTS (Noble Numbat) Virtual Machine on Proxmox VE, automatically installing **cPanel & WHM**.
 
 The script is styled and structured to look and act exactly like the popular **Proxmox VE Helper-Scripts** (community-scripts).
 
@@ -12,17 +12,17 @@ The script is styled and structured to look and act exactly like the popular **P
 - ⚙️ **Default & Advanced Presets:**
   - **Default:** Deploys a VM with 4 cores, 8GB RAM, and 100GB Disk with Q35 machine types and Host CPU profiles.
   - **Advanced:** Lets you customize VM ID, CPU cores, RAM, Disk Cache, Bridge interface, MAC address, VLAN tag, and MTU.
-- 💿 **AlmaLinux 9 & Image Caching:** Automatically downloads the official AlmaLinux 9 Generic Cloud image and caches it in `/var/lib/vz/template/cache/` to accelerate subsequent runs.
-- 🚀 **Pre-Configured Image Customization:** Uses `virt-customize` on the host to inject dependencies (`perl`, `wget`, `curl`, `qemu-guest-agent`) and a background cPanel installer systemd service into the OS.
+- 💿 **Ubuntu 24.04 LTS & Image Caching:** Automatically downloads the official Ubuntu 24.04 LTS Cloud image and caches it in `/var/lib/vz/template/cache/` to accelerate subsequent runs.
+- 🚀 **Pre-Configured Image Customization:** Uses `virt-customize` on the host to run `apt-get update`, inject dependencies (`perl`, `perl-base`, `wget`, `curl`, `qemu-guest-agent`), disable the OS firewall (`ufw`), configure root password authentication via SSH, and set up a background cPanel installer systemd service in the VM.
 - 🌐 **Native Cloud-Init Setup:** Configures static IP CIDR prefix, Gateway, Nameservers, and Root password options (including random generation) via Proxmox Native Cloud-Init.
-- 🛡️ **Safety Check suite:** Built-in verification for root execution, Proxmox VE environment version (PVE 8/9 support), CPU architectures (`amd64` check), active SSH sessions, and duplicate VM IDs.
+- 🛡️ **Safety Check Suite:** Built-in verification for root execution, Proxmox VE environment version (PVE 8/9 support), CPU architectures (`amd64` check), active SSH sessions, and duplicate VM IDs.
 
 ---
 
 ## Prerequisites
 
 1. **Proxmox VE Host:** Must be executed directly on a Proxmox VE hypervisor host shell as `root`.
-2. **Architecture:** Host machine must run on `amd64` architecture.
+2. **Architecture:** Host machine must run on `amd64` architecture (ARM architectures are not supported).
 3. **Networking:** A free static IPv4 address, matching subnet CIDR, Gateway IP, and a fully qualified domain name (FQDN) mapping to the static IP (cPanel licensing requirement).
 4. **License:** A valid cPanel license associated with the VM's static IP.
 
@@ -71,9 +71,13 @@ During execution, the wizard will walk you through setting up:
 
 1. **Pre-flight Checks:** Verifies hypervisor OS, `root` privileges, and CPU platform support.
 2. **Resource Selection:** Prompts user configurations via whiptail dialog lists.
-3. **Storage pool extraction:** Queries available storage destinations and asks the user to select one.
+3. **Storage Pool Extraction:** Queries available storage destinations and asks the user to select one.
 4. **Custom Image Provisioning:**
    - Checks for `libguestfs-tools` (installs it on Proxmox if missing).
+   - Downloads and caches the Ubuntu 24.04 LTS Cloud image.
+   - Runs `apt-get update` and installs `perl`, `perl-base`, `wget`, `curl`, and `qemu-guest-agent`.
+   - Disables UFW firewall services (saving rules to `/root/firewall.rules`).
+   - Pre-configures SSH daemon to allow password authentication and root login (overriding cloud-init settings).
    - Injects `/root/install-cpanel.sh` and `/etc/systemd/system/install-cpanel.service` into the disk image.
 5. **VM Provisioning:**
    - Creates the Proxmox VM, imports and resizes the customized disk.

@@ -9,15 +9,13 @@ source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/community-sc
 function header_info {
   clear
   cat <<"EOF"
-       _____                  _ 
-      / ____|                | |
-  ___| |     _ __   __ _ _ __| |
- / __| |    | '_ \ / _` | '__| |
-| (__| |____| |_) | (_| | |  | |
- \___|\_____| .__/ \__,_|_|  |_|
-            | |                 
-            |_|                 
-
+********************************
+*      ____                  _ *
+*  ___|  _ \ __ _ _ __   ___| |*
+* / __| |_) / _` | '_ \ / _ \ |*
+*| (__|  __/ (_| | | | |  __/ |*
+* \___|_|   \__,_|_| |_|\___|_|*
+********************************
 EOF
 }
 header_info
@@ -26,8 +24,8 @@ GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:
 RANDOM_UUID="$(cat /proc/sys/kernel/random/uuid)"
 METHOD=""
 NSAPP="cpanel-vm"
-var_os="almalinux"
-var_version="9"
+var_os="ubuntu"
+var_version="24.04"
 
 YW=$(echo "\033[33m")
 BL=$(echo "\033[36m")
@@ -594,16 +592,16 @@ if ! command -v virt-customize &>/dev/null; then
   msg_ok "Installed libguestfs-tools"
 fi
 
-msg_info "Retrieving the URL for the AlmaLinux 9 Generic Cloud Image"
-URL="https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+msg_info "Retrieving the URL for the Ubuntu 24.04 LTS Cloud Image"
+URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 CACHE_DIR="/var/lib/vz/template/cache"
-CACHE_FILE="$CACHE_DIR/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+CACHE_FILE="$CACHE_DIR/noble-server-cloudimg-amd64.img"
 mkdir -p "$CACHE_DIR"
 sleep 2
 msg_ok "${CL}${BL}${URL}${CL}"
 
 if [[ ! -s "$CACHE_FILE" ]]; then
-  msg_info "Downloading AlmaLinux 9 Cloud Image"
+  msg_info "Downloading Ubuntu 24.04 LTS Cloud Image"
   curl -f#SL -o "$CACHE_FILE" "$URL"
   echo -en "\e[1A\e[0K"
   msg_ok "Downloaded ${CL}${BL}$(basename "$CACHE_FILE")${CL}"
@@ -632,14 +630,14 @@ btrfs)
   ;;
 esac
 
-msg_info "Preparing AlmaLinux image with cPanel installer"
-WORK_FILE="${TEMP_DIR}/almalinux.qcow2"
+msg_info "Preparing Ubuntu image with cPanel installer"
+WORK_FILE="${TEMP_DIR}/ubuntu.qcow2"
 cp "$CACHE_FILE" "$WORK_FILE"
 
 export LIBGUESTFS_BACKEND_SETTINGS=dns=8.8.8.8,1.1.1.1
 
 # Install guest packages inside VM image
-virt-customize -q -a "$WORK_FILE" --install qemu-guest-agent,curl,ca-certificates,perl,wget >/dev/null 2>&1
+virt-customize -q -a "$WORK_FILE" --run-command "apt-get update" --install qemu-guest-agent,curl,ca-certificates,perl,perl-base,wget >/dev/null 2>&1
 
 # Write first-boot helper script inside image
 virt-customize -q -a "$WORK_FILE" --write "/root/install-cpanel.sh:
@@ -653,14 +651,10 @@ for i in {1..30}; do
   sleep 5
 done
 
-# Disable SELinux as required by cPanel
-if [ -f /etc/selinux/config ]; then
-  sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
-  setenforce 0 || true
-fi
-
-# Disable firewalld during cPanel installation
-systemctl disable --now firewalld 2>/dev/null || true
+# Disable firewall (UFW) as required by cPanel on Ubuntu
+iptables-save > /root/firewall.rules
+systemctl stop ufw.service 2>/dev/null || true
+systemctl disable ufw.service 2>/dev/null || true
 
 # Run official cPanel installer
 cd /home
@@ -697,11 +691,14 @@ virt-customize -q -a "$WORK_FILE" --hostname "${HOSTNAME_FQDN}" >/dev/null 2>&1 
 virt-customize -q -a "$WORK_FILE" --run-command "truncate -s 0 /etc/machine-id" >/dev/null 2>&1 || true
 virt-customize -q -a "$WORK_FILE" --run-command "rm -f /var/lib/dbus/machine-id" >/dev/null 2>&1 || true
 
-# Allow SSH root / password auth
-virt-customize -q -a "$WORK_FILE" --run-command "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config" >/dev/null 2>&1 || true
-virt-customize -q -a "$WORK_FILE" --run-command "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config" >/dev/null 2>&1 || true
+# Allow SSH root / password auth (extremely thorough config for Ubuntu 24.04 compatibility)
+virt-customize -q -a "$WORK_FILE" \
+  --run-command "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config" \
+  --run-command "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config" \
+  --run-command "sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config.d/* 2>/dev/null || true" \
+  --run-command "echo 'ssh_pwauth: true' >> /etc/cloud/cloud.cfg 2>/dev/null || true" >/dev/null 2>&1 || true
 
-msg_ok "Prepared AlmaLinux image with cPanel installer"
+msg_ok "Prepared Ubuntu image with cPanel installer"
 
 msg_info "Creating a cPanel & WHM VM shell"
 qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE \
